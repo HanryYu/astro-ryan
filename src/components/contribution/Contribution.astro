@@ -1,0 +1,96 @@
+---
+import { format, subDays } from 'date-fns';
+
+export const prerender = false;
+
+interface Props {
+  username: string;
+}
+
+interface Contribution {
+  date: string;
+  count: number;
+  color: string;
+  intensity: string;
+}
+
+const { username } = Astro.props;
+const apiUrl = new URL(`/api/V1/${username}`, Astro.url);
+
+// Fetch data from the API
+// const response = await fetch(`${Astro.url}/api/v1/${username}`);
+const response = await fetch(apiUrl);
+const data = await response.json();
+
+// Get the last 365 days of contributions
+const today = new Date();
+const contributions = (data.contributions as Contribution[])
+  .filter((contrib: Contribution) => {
+    const contribDate = new Date(contrib.date);
+    return contribDate >= subDays(today, 365) && contribDate <= today;
+  })
+  .reverse();
+
+// Create a map of date to contribution count
+const contributionMap = new Map(
+  contributions.map((contrib: Contribution) => [contrib.date, contrib])
+);
+
+// Generate an array of the last 365 days
+const days: Contribution[] = Array.from({ length: 365 }, (_, i) => {
+  const date = format(subDays(today, i), 'yyyy-MM-dd');
+  return contributionMap.get(date) || { date, count: 0, color: '#ebedf0', intensity: '0' };
+});
+
+// Group days by week
+const weeks: Contribution[][] = Array.from({ length: 53 }, (_, i) => 
+  days.slice(i * 7, (i + 1) * 7)
+);
+
+// Get the maximum contribution count for scaling
+const maxCount = Math.max(...contributions.map((c: Contribution) => c.count));
+
+// Function to get the color based on contribution count
+function getColor(count: number): string {
+  const intensity = Math.min(Math.floor((count / maxCount) * 4), 4);
+  return {
+    0: 'bg-gray-100',
+    1: 'bg-green-100',
+    2: 'bg-green-300',
+    3: 'bg-green-500',
+    4: 'bg-green-700',
+  }[intensity] as string;
+}
+
+---
+
+<div class="contribution-graph">
+  <div class="flex flex-col">
+    <div class="flex justify-end space-x-2 text-xs text-gray-500 mb-1">
+      {['', 'Mon', '', 'Wed', '', 'Fri', ''].map((day) => (
+        <div class="w-4">{day}</div>
+      ))}
+    </div>
+    <div class="flex space-x-2">
+      {weeks.map((week) => (
+        <div class="flex flex-col space-y-2">
+          {week.map((day: Contribution) => (
+            <div
+              class={`w-4 h-4 rounded-sm ${getColor(day.count)}`}
+              title={`${format(new Date(day.date), 'MMM d, yyyy')}: ${day.count} contributions`}
+            ></div>
+          ))}
+        </div>
+      ))}
+    </div>
+  </div>
+  <div class="flex justify-end items-center mt-2 text-xs text-gray-500">
+    <span class="mr-2">Less</span>
+    <div class="flex space-x-1">
+      {[0, 1, 2, 3, 4].map((level) => (
+        <div class={`w-4 h-4 rounded-sm ${getColor(level * (maxCount / 4))}`}></div>
+      ))}
+    </div>
+    <span class="ml-2">More</span>
+  </div>
+</div>
